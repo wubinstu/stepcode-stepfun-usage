@@ -1,0 +1,14 @@
+名称:_c_WBKFRo
+值:在这里粘贴浏览器中 platform.stepfun.com 域名下的 cookie 值
+
+名称:_wafdytokenv1
+值:WAF token 值(可选)
+
+名称:Oasis-Webid
+值:设备 ID(必填, 一串 hex)
+
+名称:Oasis-Token
+值:accessJWT...refreshJWT(必填, 两段 JWT 用英文三个点 ... 连接)
+
+名称:INGRESSCOOKIE
+值:INGRESS cookie 值(可选)

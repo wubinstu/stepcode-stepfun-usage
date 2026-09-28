@@ -1,0 +1,11 @@
+# 含登录态的 cookie 文件, 切勿提交!
+cookie
+cookie.txt
+*.cookie
+
+# 本地续期后的 token 状态(由插件生成)
+state.json
+
+# Node
+node_modules/
+*.log
