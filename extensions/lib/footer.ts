@@ -88,45 +88,65 @@ function roundHalfUp2(n: number): number {
 }
 
 /**
- * 渲染用量块(右对齐区域的左半部分):
- *   余额 -0.04 · credit 用 0.50M 剩 99.00%
+ * 渲染用量块(右对齐区域的左半部分), 三种信息密度:
+ *   full:    余额 -0.04 · credit 用 812.04M 剩 89.85%
+ *   compact: 余额 -0.04 · credit 89.85%
+ *   minimal: 余额 -0.04
+ * coding 旧套餐(无 M 总量)时 full 显示 5 小时/周限额剩余百分比。
  */
-export function renderUsageText(
+export function renderUsageSegments(
 	theme: ThemeLike,
 	snapshot: UsageSnapshot | null,
 	error: string | null,
-): string {
+): { full: string; compact: string; minimal: string } {
 	if (error || !snapshot) {
-		return theme.fg("dim", error ? "余额 -- · credit --" : "余额 … · credit …");
+		const placeholder = theme.fg("dim", error ? "余额 -- · credit --" : "余额 … · credit …");
+		return { full: placeholder, compact: placeholder, minimal: placeholder };
 	}
 	const balance = resolveBalance(snapshot);
 	const balanceSeg =
 		balance === null
 			? theme.fg("dim", "余额 …")
-			: balance.balance < 0
-				? theme.fg("error", `余额 ${balance.balance.toFixed(2)}`)
-				: theme.fg("success", `余额 ${balance.balance.toFixed(2)}`);
+			: balance < 0
+				? theme.fg("error", `余额 ${balance.toFixed(2)}`)
+				: theme.fg("success", `余额 ${balance.toFixed(2)}`);
+	const minimal = balanceSeg;
 
-	const credit = computeCreditView(snapshot.rateLimit);
-	let creditSeg: string;
-	if (credit.leftPercent === null && credit.usedM === null) {
-		creditSeg = theme.fg("dim", "credit --");
-	} else {
+	const credit = computeCreditView(snapshot.plan);
+	const pct = (p: number): string =>
+		p >= 50 ? theme.fg("success", `${p.toFixed(2)}%`) : p >= 10 ? theme.fg("warning", `${p.toFixed(2)}%`) : theme.fg("error", `${p.toFixed(2)}%`);
+
+	let creditFull: string;
+	let creditCompact: string;
+	if (credit.kind === "buckets") {
 		const parts: string[] = [];
 		if (credit.usedM !== null) parts.push(`用 ${roundHalfUp2(credit.usedM).toFixed(2)}M`);
-		if (credit.leftPercent !== null) parts.push(`剩 ${credit.leftPercent.toFixed(2)}%`);
-		const pct = credit.leftPercent;
-		const paint =
-			pct === null
-				? (t: string) => theme.fg("dim", t)
-				: pct >= 50
-					? (t: string) => theme.fg("success", t)
-					: pct >= 10
-						? (t: string) => theme.fg("warning", t)
-						: (t: string) => theme.fg("error", t);
-		creditSeg = paint(`credit ${parts.join(" ")}`);
+		if (credit.leftPercent !== null) parts.push(`剩 ${pct(credit.leftPercent)}`);
+		creditFull = theme.fg("dim", "credit ") + parts.join(" ");
+		creditCompact = credit.leftPercent !== null ? theme.fg("dim", "credit ") + pct(credit.leftPercent) : theme.fg("dim", "credit --");
+	} else if (credit.kind === "windows") {
+		const name = (id: "five_hour" | "weekly", p: number | null): string =>
+			p === null ? theme.fg("dim", `${id === "five_hour" ? "5h" : "周"}--`) : theme.fg("dim", `${id === "five_hour" ? "5h" : "周"}剩`) + pct(p);
+		creditFull = theme.fg("dim", "credit ") + name("five_hour", credit.fiveHourLeftPercent) + " " + name("weekly", credit.weeklyLeftPercent);
+		creditCompact = credit.weeklyLeftPercent !== null ? theme.fg("dim", "credit 周剩") + pct(credit.weeklyLeftPercent) : theme.fg("dim", "credit --");
+	} else if (credit.kind === "none") {
+		creditFull = theme.fg("dim", "credit 无套餐");
+		creditCompact = theme.fg("dim", "credit 无套餐");
+	} else {
+		creditFull = theme.fg("dim", "credit --");
+		creditCompact = creditFull;
 	}
-	return `${balanceSeg} ${theme.fg("dim", "·")} ${creditSeg}`;
+	const join = (c: string): string => `${minimal} ${theme.fg("dim", "·")} ${c}`;
+	return { full: join(creditFull), compact: join(creditCompact), minimal };
+}
+
+/** 兼容旧调用: 完整密度文本 */
+export function renderUsageText(
+	theme: ThemeLike,
+	snapshot: UsageSnapshot | null,
+	error: string | null,
+): string {
+	return renderUsageSegments(theme, snapshot, error).full;
 }
 
 export interface FooterRenderInput {
@@ -178,33 +198,18 @@ export function renderFooterLines(input: FooterRenderInput): string[] {
 	const left = segments.join(muted(" · "));
 
 	// ---- 右侧块: 用量 + context left(空间不足时按优先级降级) ----
-	const usageFull = renderUsageText(theme, snapshot, error);
-	const credit = snapshot && !error ? computeCreditView(snapshot.rateLimit) : null;
-	const balanceInfo = snapshot && !error ? resolveBalance(snapshot) : null;
-
-	const paintBalance = (b: number): string =>
-		b < 0 ? theme.fg("error", `余额 ${b.toFixed(2)}`) : theme.fg("success", `余额 ${b.toFixed(2)}`);
-	const paintPct = (pct: number): string =>
-		pct >= 50 ? theme.fg("success", `${pct.toFixed(2)}%`) : pct >= 10 ? theme.fg("warning", `${pct.toFixed(2)}%`) : theme.fg("error", `${pct.toFixed(2)}%`);
-
-	const usageCompact =
-		balanceInfo === null
-			? usageFull
-			: credit?.leftPercent !== null && credit?.leftPercent !== undefined
-				? `${paintBalance(balanceInfo.balance)} ${theme.fg("dim", "·")} credit ${paintPct(credit.leftPercent)}`
-				: paintBalance(balanceInfo.balance);
-	const usageMinimal = balanceInfo === null ? usageFull : paintBalance(balanceInfo.balance);
+	const usage = renderUsageSegments(theme, snapshot, error);
 
 	const ctxLeftRaw = (() => {
-		const usage = ctx.getContextUsage?.();
-		if (!usage || typeof usage.percent !== "number") return null;
-		const usedPercent = Math.max(0, Math.min(100, usage.percent));
+		const usageCtx = ctx.getContextUsage?.();
+		if (!usageCtx || typeof usageCtx.percent !== "number") return null;
+		const usedPercent = Math.max(0, Math.min(100, usageCtx.percent));
 		const text = `${Math.round(100 - usedPercent)}% context left`;
 		return usedPercent > 90 ? theme.fg("error", text) : usedPercent > 70 ? theme.fg("warning", text) : muted(text);
 	})();
 
 	/** 从信息最完整到最精简的右侧候选(空串 = 完全让位给 context left) */
-	const usageCandidates = [usageFull, usageCompact, usageMinimal, ""];
+	const usageCandidates = [usage.full, usage.compact, usage.minimal, ""];
 
 	const leftWidth = visibleWidth(left);
 	const minPadding = 2;
