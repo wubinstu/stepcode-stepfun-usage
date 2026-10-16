@@ -113,25 +113,37 @@ export function renderUsageSegments(
 	const minimal = balanceSeg;
 
 	const credit = computeCreditView(snapshot.plan);
-	const pct = (p: number): string =>
-		p >= 50 ? theme.fg("success", `${p.toFixed(2)}%`) : p >= 10 ? theme.fg("warning", `${p.toFixed(2)}%`) : theme.fg("error", `${p.toFixed(2)}%`);
+	/** 整段单色: 剩余 >=50% 全绿(用量充足), >=10% 黄, <10% 红; 避免段内多色割裂 */
+	const paintByLeft = (p: number | null): ((t: string) => string) =>
+		p === null
+			? (t) => theme.fg("dim", t)
+			: p >= 50
+				? (t) => theme.fg("success", t)
+				: p >= 10
+					? (t) => theme.fg("warning", t)
+					: (t) => theme.fg("error", t);
 
 	let creditFull: string;
 	let creditCompact: string;
 	if (credit.kind === "buckets") {
+		const paint = paintByLeft(credit.leftPercent);
 		const parts: string[] = [];
 		if (credit.usedM !== null) parts.push(`用 ${roundHalfUp2(credit.usedM).toFixed(2)}M`);
-		if (credit.leftPercent !== null) parts.push(`剩 ${pct(credit.leftPercent)}`);
-		creditFull = theme.fg("dim", "credit ") + parts.join(" ");
-		creditCompact = credit.leftPercent !== null ? theme.fg("dim", "credit ") + pct(credit.leftPercent) : theme.fg("dim", "credit --");
+		if (credit.leftPercent !== null) parts.push(`剩 ${credit.leftPercent.toFixed(2)}%`);
+		creditFull = paint(`credit ${parts.join(" ")}`);
+		creditCompact = credit.leftPercent !== null ? paint(`credit ${credit.leftPercent.toFixed(2)}%`) : theme.fg("dim", "credit --");
 	} else if (credit.kind === "windows") {
+		// 以最紧张的窗口(剩余最少)决定整段颜色
+		const percents = [credit.fiveHourLeftPercent, credit.weeklyLeftPercent].filter((p): p is number => p !== null);
+		const paint = paintByLeft(percents.length > 0 ? Math.min(...percents) : null);
 		const name = (id: "five_hour" | "weekly", p: number | null): string =>
-			p === null ? theme.fg("dim", `${id === "five_hour" ? "5h" : "周"}--`) : theme.fg("dim", `${id === "five_hour" ? "5h" : "周"}剩`) + pct(p);
-		creditFull = theme.fg("dim", "credit ") + name("five_hour", credit.fiveHourLeftPercent) + " " + name("weekly", credit.weeklyLeftPercent);
-		creditCompact = credit.weeklyLeftPercent !== null ? theme.fg("dim", "credit 周剩") + pct(credit.weeklyLeftPercent) : theme.fg("dim", "credit --");
+			p === null ? `${id === "five_hour" ? "5h" : "周"}--` : `${id === "five_hour" ? "5h" : "周"}剩${p.toFixed(2)}%`;
+		creditFull = paint(`credit ${name("five_hour", credit.fiveHourLeftPercent)} ${name("weekly", credit.weeklyLeftPercent)}`);
+		creditCompact =
+			credit.weeklyLeftPercent !== null ? paint(`credit 周剩${credit.weeklyLeftPercent.toFixed(2)}%`) : theme.fg("dim", "credit --");
 	} else if (credit.kind === "none") {
 		creditFull = theme.fg("dim", "credit 无套餐");
-		creditCompact = theme.fg("dim", "credit 无套餐");
+		creditCompact = creditFull;
 	} else {
 		creditFull = theme.fg("dim", "credit --");
 		creditCompact = creditFull;
