@@ -26,6 +26,7 @@
 > 历史说明：v0.1.0 曾通过 platform.stepfun.com 网页端内部 RPC + 浏览器 cookie 获取
 > Credit（cookie 需 30 天内外加一次、插件自动续期）。官方开放 `/usage` 接口后，
 > v0.2.0 起**彻底移除 cookie 依赖**，两个数据源均为官方 API，API Key 永不过期。
+> v0.2.1 起移除 package.json（零 npm 依赖，约定式目录自动发现），安装无需 npm 环境。
 
 **API Key 解析顺序**（通常无需任何配置）：
 
@@ -34,16 +35,53 @@
 
 ## 安装
 
-```bash
-# 方式一: 本地目录
-step install .
+**前置条件: 只需要 `git`。** 本插件没有任何 npm 依赖、也没有 package.json，
+安装过程只有一次 git clone，**不需要 Node.js / npm 环境**。网络需能访问
+github.com（国内网络不畅时配合代理即可）。
 
-# 方式二: GitHub
+```bash
+# GitHub 安装（推荐）
+step install git:github.com/wubinstu/stepcode-stepfun-usage
+
+# 或本地目录安装
+step install .
+```
+
+安装后重启 stepcode（或 `/reload`），信息行右侧即出现用量。
+
+### 更新插件
+
+直接重新执行安装命令即可，该命令幂等——对已存在的克隆会原地 fetch 并 reconcile，
+不会重复克隆：
+
+```bash
 step install git:github.com/wubinstu/stepcode-stepfun-usage
 ```
 
-安装后重启 stepcode（或 `/reload`），信息行右侧即出现用量。之后随官方 CLI 一起
-`step update --extensions` 即可保持最新。
+> 注意: v0.1.5 的 `step update` 只能更新 CLI 自身；文档中的 `step update --extensions`
+> 等参数在该版本二进制里尚未生效（执行会提示 `Usage: step update [version]`）。
+> 更新插件请用上面的 `step install` 命令。
+
+### 关于"安装了两份"（双克隆说明）
+
+有反馈（Windows / Linux 均可复现）：`step install` 克隆到
+`~/.stepcode/agent/git/github.com/wubinstu/stepcode-stepfun-usage`，但在 **home 目录**
+下启动 step 时，又会克隆出一份到 `~/.stepcode/git/github.com/wubinstu/stepcode-stepfun-usage`。
+
+**原因**: 当 cwd 恰好是 home 目录时，`~/.stepcode` 会同时被当作*项目*配置目录，
+用户作用域的包会被以*项目*作用域解析，两个作用域的克隆路径不同（项目：
+`~/.stepcode/git/`；用户：`~/.stepcode/agent/git/`），于是出现两份磁盘克隆。
+
+**影响**: 按包身份去重（项目作用域优先），同时只有一份生效。从 home 目录启动时，
+生效的是 `~/.stepcode/git/` 那份，而 `step install` 更新的是 `~/.stepcode/agent/git/`
+那份——此时刚更新的版本不会生效。
+
+**建议**: 在项目目录中使用 step（正常用法无此问题）；若习惯在 home 目录直接启动，
+更新插件后删除项目作用域那份克隆，下次从 home 启动会重新克隆最新版：
+
+```bash
+rm -rf ~/.stepcode/git/github.com/wubinstu/stepcode-stepfun-usage
+```
 
 ## 命令
 
