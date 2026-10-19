@@ -62,6 +62,31 @@ step install git:github.com/wubinstu/stepcode-stepfun-usage
 > 等参数在该版本二进制里尚未生效（执行会提示 `Usage: step update [version]`）。
 > 更新插件请用上面的 `step install` 命令。
 
+### 卸载
+
+```bash
+step remove git:github.com/wubinstu/stepcode-stepfun-usage
+```
+
+该命令会同时把插件从设置中移除、并删除克隆目录。重启 stepcode 后，footer 右侧
+不再显示用量，`/stepfun-usage` 命令也随之消失。
+
+如需清理可能存在的残留文件（Windows 把 `~` 换成 `%USERPROFILE%`）：
+
+```bash
+# v0.1 旧版的 cookie / 登录态目录（v0.2+ 已不再使用；没用过旧版可忽略）
+rm -rf ~/.stepcode/stepfun-usage
+# 在 home 目录运行过 step 时，可能残留一份项目作用域克隆（见下方双克隆说明）
+rm -rf ~/.stepcode/git/github.com/wubinstu/stepcode-stepfun-usage
+# 用户作用域克隆（step remove 通常已删除；若仍存在则手动清理）
+rm -rf ~/.stepcode/agent/git/github.com/wubinstu/stepcode-stepfun-usage
+```
+
+> 若当初是项目作用域安装的（`step install -l ...`），卸载同样加 `-l`：
+> `step remove -l git:github.com/wubinstu/stepcode-stepfun-usage`
+
+以后想重新使用，重新安装即可：`step install git:github.com/wubinstu/stepcode-stepfun-usage`
+
 ### 关于"安装了两份"（双克隆说明）
 
 有反馈（Windows / Linux 均可复现）：`step install` 克隆到
