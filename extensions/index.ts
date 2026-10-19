@@ -28,17 +28,21 @@ import {
 	fetchPlanUsage,
 	type UsageSnapshot,
 } from "./lib/api.ts";
-import { renderFooterLines, renderUsageText, STATUS_KEY } from "./lib/footer.ts";
+import { renderFooterLines, STATUS_KEY } from "./lib/footer.ts";
 
 const POLL_INTERVAL_MS = 30_000;
 
-type FooterMode = "footer" | "status";
+/** 用量块对齐方式 */
+type Align = "left" | "right";
 
 interface RuntimeState {
 	snapshot: UsageSnapshot | null;
 	error: string | null;
 	lastNotifiedError: string | null;
-	mode: FooterMode;
+	/** 用量 footer 开关(on/off) */
+	enabled: boolean;
+	/** 对齐方式(默认右对齐) */
+	align: Align;
 	inFlight: boolean;
 	timer: ReturnType<typeof setInterval> | null;
 	tui: { requestRender(): void } | null;
@@ -49,7 +53,8 @@ const state: RuntimeState = {
 	snapshot: null,
 	error: null,
 	lastNotifiedError: null,
-	mode: "footer",
+	enabled: true,
+	align: "right",
 	inFlight: false,
 	timer: null,
 	tui: null,
@@ -132,43 +137,41 @@ export default function stepfunUsage(pi: ExtensionAPI) {
 	}
 
 	function afterStateChange(): void {
-		if (state.mode === "footer") {
-			state.tui?.requestRender();
-		} else if (currentCtx?.hasUI) {
-			currentCtx.ui.setStatus(STATUS_KEY, renderUsageText(currentCtx.ui.theme, state.snapshot, state.error));
-		}
+		if (state.enabled) state.tui?.requestRender();
 	}
 
 	function applyFooterMode(): void {
 		const ctx = currentCtx;
 		if (!ctx?.hasUI) return;
-		if (state.mode === "footer") {
-			ctx.ui.setStatus(STATUS_KEY, undefined);
-			ctx.ui.setFooter((tui, theme, footerData) => {
-				state.tui = tui;
-				const renderCtx = currentCtx ?? ctx;
-				return {
-					invalidate() {},
-					render(width: number): string[] {
-						return renderFooterLines({
-							width,
-							theme,
-							ctx: renderCtx as unknown as Parameters<typeof renderFooterLines>[0]["ctx"],
-							footerData: footerData as unknown as Parameters<typeof renderFooterLines>[0]["footerData"],
-							snapshot: state.snapshot,
-							error: state.error,
-						});
-					},
-					dispose() {
-						state.tui = null;
-					},
-				};
-			});
-		} else {
+		if (!state.enabled) {
+			// 关闭: 恢复内置 footer, 并清理状态行
 			state.tui = null;
 			ctx.ui.setFooter(undefined);
-			ctx.ui.setStatus(STATUS_KEY, renderUsageText(ctx.ui.theme, state.snapshot, state.error));
+			ctx.ui.setStatus(STATUS_KEY, undefined);
+			return;
 		}
+		ctx.ui.setStatus(STATUS_KEY, undefined);
+		ctx.ui.setFooter((tui, theme, footerData) => {
+			state.tui = tui;
+			const renderCtx = currentCtx ?? ctx;
+			return {
+				invalidate() {},
+				render(width: number): string[] {
+					return renderFooterLines({
+						width,
+						theme,
+						ctx: renderCtx as unknown as Parameters<typeof renderFooterLines>[0]["ctx"],
+						footerData: footerData as unknown as Parameters<typeof renderFooterLines>[0]["footerData"],
+						snapshot: state.snapshot,
+						error: state.error,
+						align: state.align,
+					});
+				},
+				dispose() {
+					state.tui = null;
+				},
+			};
+		});
 	}
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -192,32 +195,30 @@ export default function stepfunUsage(pi: ExtensionAPI) {
 	});
 
 	pi.registerCommand("stepfun-usage", {
-		description: "StepFun 用量: /stepfun-usage [refresh|footer|status|toggle|detail]",
+		description: "StepFun 用量: /stepfun-usage on [left|right] | off | detail | refresh",
 		handler: async (args: string, ctx) => {
 			currentCtx = ctx;
-			const cmd = args.trim().toLowerCase();
-			switch (cmd) {
-				case "":
-				case "toggle":
-				case "mode": {
-					state.mode = state.mode === "footer" ? "status" : "footer";
+			const [sub, arg] = args.trim().toLowerCase().split(/\s+/, 2);
+			switch (sub) {
+				case "on": {
+					if (arg && arg !== "left" && arg !== "right") {
+						ctx.ui.notify("用法: /stepfun-usage on [left|right] | off | detail | refresh", "info");
+						break;
+					}
+					// on 默认右对齐; on left / on right 指定对齐(已在开启状态时即切换)
+					state.align = arg === "left" ? "left" : "right";
+					state.enabled = true;
 					applyFooterMode();
-					ctx.ui.notify(
-						state.mode === "footer" ? "已切换: 右对齐自定义 footer" : "已切换: 内置 footer + 状态行",
-						"info",
-					);
+					state.tui?.requestRender();
+					ctx.ui.notify(`用量显示已开启(${state.align === "left" ? "左对齐" : "右对齐"})`, "info");
 					break;
 				}
-				case "footer":
-					state.mode = "footer";
+				case "off": {
+					state.enabled = false;
 					applyFooterMode();
-					ctx.ui.notify("已切换: 右对齐自定义 footer", "info");
+					ctx.ui.notify("用量显示已关闭(已恢复内置 footer)", "info");
 					break;
-				case "status":
-					state.mode = "status";
-					applyFooterMode();
-					ctx.ui.notify("已切换: 内置 footer + 状态行", "info");
-					break;
+				}
 				case "refresh":
 					await refreshUsage({ notify: true });
 					ctx.ui.notify("已刷新 StepFun 用量", "info");
@@ -268,7 +269,7 @@ export default function stepfunUsage(pi: ExtensionAPI) {
 					break;
 				}
 				default:
-					ctx.ui.notify("用法: /stepfun-usage [refresh|footer|status|toggle|detail]", "info");
+					ctx.ui.notify("用法: /stepfun-usage on [left|right] | off | detail | refresh", "info");
 			}
 		},
 	});

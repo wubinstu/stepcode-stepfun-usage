@@ -112,9 +112,11 @@ rm -rf ~/.stepcode/git/github.com/wubinstu/stepcode-stepfun-usage
 
 | 命令 | 作用 |
 | --- | --- |
-| `/stepfun-usage` 或 `/stepfun-usage toggle` | 在「右对齐自定义 footer」与「内置 footer + 状态行」间切换 |
+| `/stepfun-usage on` | 开启用量 footer（默认右对齐） |
+| `/stepfun-usage on left` | 开启并左对齐（已开启时从右对齐切换为左对齐） |
+| `/stepfun-usage on right` | 开启并右对齐 |
+| `/stepfun-usage off` | 关闭用量 footer，恢复内置 footer |
 | `/stepfun-usage refresh` | 立即刷新用量 |
-| `/stepfun-usage footer` / `/stepfun-usage status` | 直接切换模式 |
 | `/stepfun-usage detail` | 查看明细（余额构成、套餐、Credit 桶、限额窗口、到期时间） |
 
 ## 套餐类型的显示适配
@@ -130,10 +132,11 @@ rm -rf ~/.stepcode/git/github.com/wubinstu/stepcode-stepfun-usage
 
 - 每 30 秒拉取一次；两个接口并行请求、独立容错（一个失败不影响另一个）；
 - 自定义 footer 复刻内置 footer 左侧信息（模式 · 模型 · 思考档位 · 目录 · 其他扩展状态），
-  将用量块右对齐插入 `N% context left` 之前，布局与宽度阈值（60/80/100）与内置一致；
+  用量块默认右对齐插入 `N% context left` 之前，布局与宽度阈值（60/80/100）与内置一致；
   终端过窄时按「完整 → 精简 → 仅余额 → 仅 context left」逐级降级；
-- `status` 模式不改动 footer 结构，仅通过 `ctx.ui.setStatus` 在内置 footer 追加一段，
-  适合想最大限度保持原生行为的场景；
+- `/stepfun-usage on left` 左对齐显示：用量块拼接到左侧段之后（类似一条扩展状态），
+  `N% context left` 仍在最右侧，降级策略与右对齐一致；
+- `/stepfun-usage off` 恢复内置 footer，插件不再渲染任何内容；
 - 数值格式与官方一致：Credit 已用量 = Σ(桶 total − remaining)/1e6，half-up 保留两位小数；
   剩余百分比 = 100 − 官方 used_percent（按桶总量加权），保留两位小数。
 

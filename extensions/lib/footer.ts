@@ -168,11 +168,14 @@ export interface FooterRenderInput {
 	footerData: FooterDataLike;
 	snapshot: UsageSnapshot | null;
 	error: string | null;
+	/** 用量块对齐方式: right=右对齐(默认); left=拼接到左侧段之后(左对齐) */
+	align?: "left" | "right";
 }
 
 /** 渲染完整 footer(返回若干行, 与内置 footer 行数一致: 1 行) */
 export function renderFooterLines(input: FooterRenderInput): string[] {
 	const { width, theme, ctx, footerData, snapshot, error } = input;
+	const align = input.align ?? "right";
 	const safeWidth = Math.max(1, Math.floor(width));
 	const muted = (t: string) => theme.fg("dim", t);
 
@@ -226,6 +229,38 @@ export function renderFooterLines(input: FooterRenderInput): string[] {
 	const leftWidth = visibleWidth(left);
 	const minPadding = 2;
 	const join = (parts: (string | null)[]): string => parts.filter((p): p is string => !!p).join(muted(" · "));
+
+	if (align === "left") {
+		// 左对齐: 用量块作为左侧段的延伸, context left 仍在最右侧;
+		// 空间不足时按 完整→精简→仅余额→无用量 降级(每级先试带 context left,
+		// 再试不带), 与右对齐模式优先级一致
+		const buildLeft = (u: string): string => (u ? [...segments, u] : segments).join(muted(" · "));
+		outer: for (const u of [usage.full, usage.compact, usage.minimal, ""]) {
+			const leftAligned = buildLeft(u);
+			const w = visibleWidth(leftAligned);
+			for (const withCtx of [true, false]) {
+				if (!ctxLeftRaw || !withCtx) {
+					if (w <= safeWidth) return [truncateToWidth(leftAligned, safeWidth, "")];
+					continue;
+				}
+				const rw = visibleWidth(ctxLeftRaw);
+				if (w + minPadding + rw <= safeWidth) {
+					return [leftAligned + " ".repeat(safeWidth - w - rw) + ctxLeftRaw];
+				}
+			}
+		}
+		// 连最小用量都放不下: 保留 context left, 按内置逻辑裁截左侧
+		const leftMin = buildLeft(usage.minimal);
+		if (ctxLeftRaw) {
+			const rw = visibleWidth(ctxLeftRaw);
+			const available = Math.max(0, safeWidth - rw - 1);
+			const trimmed = truncateToWidth(leftMin, available, "");
+			const gap = safeWidth - visibleWidth(trimmed) - rw;
+			if (gap >= 1) return [trimmed + " ".repeat(gap) + ctxLeftRaw];
+			return [truncateToWidth(ctxLeftRaw, safeWidth, "")];
+		}
+		return [truncateToWidth(leftMin, safeWidth, "")];
+	}
 
 	let line: string | null = null;
 	outer: for (const usage of usageCandidates) {
